@@ -1,0 +1,5 @@
+{
+  "enabled_groups": {
+  },
+  "message_template": "🔗 Discord 消息转发\n\n服务器: {guild_name}\n频道: #{channel_name}\n发言人: {author_name}\n时间: {timestamp}\n\n内容:\n{content}"
+}

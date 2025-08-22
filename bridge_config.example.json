@@ -1,0 +1,27 @@
+{
+  "enabled_groups": {
+    "123456789": {
+      "discord_filter": {
+        "guild_id": "987654321",
+        "channel_id": "111222333"
+      },
+      "enabled_at": "2025-01-01T12:00:00"
+    },
+    "987654321": {
+      "discord_filter": {
+        "guild_id": "987654321"
+      },
+      "enabled_at": "2025-01-01T13:00:00"
+    },
+    "555666777": {
+      "discord_filter": {},
+      "enabled_at": "2025-01-01T14:00:00"
+    }
+  },
+  "message_template": "🔗 Discord 消息转发\n\n服务器: {guild_name}\n频道: #{channel_name}\n发言人: {author_name}\n时间: {timestamp}\n\n内容:\n{content}",
+  "max_message_length": 1000,
+  "enable_image_forward": true,
+  "enable_embed_forward": true,
+  "forward_bot_messages": false,
+  "rate_limit_seconds": 1
+}
