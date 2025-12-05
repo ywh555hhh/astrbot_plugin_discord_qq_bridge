@@ -17,8 +17,10 @@ from astrbot.core.star.filter.permission import PermissionType
 from astrbot.api.message_components import Plain, Image
 
 
+
 @register("discord_qq_bridge", "SXP-Simon", "Discord QQ 消息桥接插件", "1.0.0")
 class DiscordQQBridge(Star):
+    # 初始化
     def __init__(self, context: Context, config: AstrBotConfig):
         """初始化插件"""
         super().__init__(context)
@@ -46,6 +48,7 @@ class DiscordQQBridge(Star):
         # 默认配置
         return {
             "enabled_groups": {},  # QQ群ID -> Discord频道配置的映射
+            "qq_adapter_name": "saki", # QQ适配器名称，默认为 saki
             "message_template": "🔗 Discord 消息转发\n\n服务器: {guild_name}\n频道: #{channel_name}\n发言人: {author_name}\n时间: {timestamp}\n\n内容:\n{content}"
         }
 
@@ -167,6 +170,12 @@ class DiscordQQBridge(Star):
             logger.error(f"Discord QQ Bridge: 获取状态失败: {e}")
             return event.plain_result(f"❌ 获取状态失败: {e}").stop_event()
 
+    @bridge_group.command("debug_id")
+    async def debug_session_id(self, event: AstrMessageEvent):
+        """调试用：显示当前会话ID"""
+        self._prepare_command(event)
+        return event.plain_result(f"🆔 会话ID: {event.session_id}\n📍 UMO: {event.unified_msg_origin}\n平台: {event.get_platform_name()}").stop_event()
+
     @bridge_group.command("template")
     @filter.permission_type(PermissionType.ADMIN)
     async def set_template(self, event: AstrMessageEvent, template: str = None):
@@ -193,30 +202,27 @@ class DiscordQQBridge(Star):
             logger.error(f"Discord QQ Bridge: 设置模板失败: {e}")
             return event.plain_result(f"❌ 设置模板失败: {e}").stop_event()
 
-    @filter.platform_adapter_type(filter.PlatformAdapterType.ALL)
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=100)
     async def handle_discord_message(self, event: AstrMessageEvent):
         """处理Discord消息并转发到QQ群"""
         try:
-            logger.debug(f"Discord QQ Bridge: 收到消息，平台: {event.get_platform_name()}")
-
             # 只处理来自Discord平台的消息
             if event.get_platform_name() != "discord":
                 return
 
+            logger.debug(f"Discord QQ Bridge: 收到消息，平台: {event.get_platform_name()}")
             logger.debug(f"Discord QQ Bridge: 开始处理Discord消息: {event.message_str}")
 
             # 检查是否应该转发此消息
             if not self._should_forward_message(event):
-                logger.debug("Discord QQ Bridge: 消息不应该转发，跳过")
+                # 日志已在 _should_forward_message 中记录
                 return
 
             # 获取Discord消息信息
             discord_info = self._extract_discord_info(event)
             if not discord_info:
-                logger.debug("Discord QQ Bridge: 无法提取Discord消息信息")
+                # 日志已在 _extract_discord_info 中记录
                 return
-
-            logger.debug(f"Discord QQ Bridge: Discord信息: {discord_info}")
 
             # 检查是否有需要转发的QQ群
             target_groups = self._get_target_groups(discord_info)
@@ -252,7 +258,7 @@ class DiscordQQBridge(Star):
             # 获取Discord原始消息对象
             raw_message = getattr(message_obj, 'raw_message', None)
             if not raw_message:
-                logger.debug("Discord QQ Bridge: raw_message 为空")
+                logger.warning("Discord QQ Bridge: raw_message 为空 (message_obj.raw_message is None)")
                 return None
 
             # 获取Discord消息的详细信息
@@ -284,19 +290,26 @@ class DiscordQQBridge(Star):
     def _get_target_groups(self, discord_info: Dict) -> List[str]:
         """获取需要转发的目标QQ群"""
         target_groups = []
+        
+        try:
+            for group_id, config in self.bridge_config["enabled_groups"].items():
+                discord_filter = config.get("discord_filter", {})
 
-        for group_id, config in self.bridge_config["enabled_groups"].items():
-            discord_filter = config.get("discord_filter", {})
+                # 检查服务器ID过滤（统一转换为字符串比较）
+                if discord_filter.get("guild_id") and str(discord_filter["guild_id"]) != discord_info.get("guild_id"):
+                    logger.debug(f"Discord QQ Bridge: 群 {group_id} 过滤不匹配: 配置GuildID={discord_filter['guild_id']} != 消息GuildID={discord_info.get('guild_id')}")
+                    continue
 
-            # 检查服务器ID过滤（统一转换为字符串比较）
-            if discord_filter.get("guild_id") and str(discord_filter["guild_id"]) != discord_info.get("guild_id"):
-                continue
+                # 检查频道ID过滤（统一转换为字符串比较）
+                if discord_filter.get("channel_id") and str(discord_filter["channel_id"]) != discord_info.get("channel_id"):
+                    logger.debug(f"Discord QQ Bridge: 群 {group_id} 过滤不匹配: 配置ChannelID={discord_filter['channel_id']} != 消息ChannelID={discord_info.get('channel_id')}")
+                    continue
 
-            # 检查频道ID过滤（统一转换为字符串比较）
-            if discord_filter.get("channel_id") and str(discord_filter["channel_id"]) != discord_info.get("channel_id"):
-                continue
+                target_groups.append(group_id)
+                logger.debug(f"Discord QQ Bridge: 匹配成功，添加群 {group_id}")
 
-            target_groups.append(group_id)
+        except Exception as e:
+            logger.error(f"Discord QQ Bridge: 匹配群组时发生错误: {e}", exc_info=True)
 
         return target_groups
 
@@ -357,7 +370,9 @@ class DiscordQQBridge(Star):
                     message = message[:max_length-3] + "..."
 
                 # 构造QQ群会话ID（格式：平台名:消息类型:会话ID）
-                qq_session_id = f"aiocqhttp:GroupMessage:{group_id}"
+                adapter_name = self.bridge_config.get("qq_adapter_name", "saki")
+                qq_session_id = f"{adapter_name}:GroupMessage:{group_id}"
+                logger.debug(f"Discord QQ Bridge: 尝试发送到会话ID: {qq_session_id}")
 
                 # 准备消息组件
                 message_components = [Plain(message)]
@@ -378,7 +393,8 @@ class DiscordQQBridge(Star):
 
                 # 发送消息到QQ群
                 message_chain = MessageChain(message_components)
-                await self.context.send_message(qq_session_id, message_chain)
+                ret = await self.context.send_message(qq_session_id, message_chain)
+                logger.debug(f"Discord QQ Bridge: 发送结果: {ret}")
 
                 logger.debug(f"Discord QQ Bridge: 消息已转发到QQ群 {group_id}")
 
@@ -394,12 +410,12 @@ class DiscordQQBridge(Star):
                 raw_message = getattr(message_obj, 'raw_message', None)
                 if raw_message and hasattr(raw_message, 'author'):
                     if raw_message.author.bot and not self.bridge_config.get("forward_bot_messages", False):
-                        logger.debug("Discord QQ Bridge: 跳过机器人消息")
+                        logger.debug(f"Discord QQ Bridge: 跳过机器人消息 (Author: {raw_message.author.name})")
                         return False
 
             # 检查消息内容是否为空
             if not event.message_str.strip():
-                logger.debug("Discord QQ Bridge: 消息内容为空")
+                logger.debug("Discord QQ Bridge: 消息内容为空 (Empty Content)")
                 return False
 
             return True
