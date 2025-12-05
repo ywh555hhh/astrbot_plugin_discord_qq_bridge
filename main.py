@@ -20,7 +20,7 @@ from astrbot.api.message_components import Plain, Image
 
 @dataclass
 class BridgeMessage:
-    """Standardized message format for bridging"""
+    """桥接消息的标准格式"""
     content: str
     author_name: str
     guild_name: str
@@ -33,14 +33,14 @@ class BridgeMessage:
 
 @dataclass
 class Destination:
-    """Target destination for a message"""
+    """消息的目标目的地"""
     group_id: str
     adapter_name: str
 
 # --- Components ---
 
 class DiscordParser:
-    """Parses Discord events into BridgeMessage objects"""
+    """将 Discord 事件解析为 BridgeMessage 对象"""
     
     def parse(self, event: AstrMessageEvent) -> Optional[BridgeMessage]:
         try:
@@ -88,7 +88,7 @@ class DiscordParser:
             return None
 
 class BridgeRouter:
-    """Routes messages to their target destinations"""
+    """将消息路由到目标目的地"""
     
     def __init__(self, data_file: str):
         self.data_file = data_file
@@ -160,7 +160,7 @@ class BridgeRouter:
         return lines
 
 class QQSender:
-    """Sends messages to QQ via AstrBot context"""
+    """通过 AstrBot 上下文发送消息到 QQ"""
     
     def __init__(self, context: Context):
         self.context = context
@@ -230,7 +230,7 @@ class DiscordQQBridge(Star):
         self.router = BridgeRouter(os.path.join(self.data_dir, "bridge_config.json"))
         self.sender = QQSender(context)
         
-        logger.info("Discord QQ Bridge 2.0: Initialized")
+        logger.info("Discord QQ Bridge 2.0: 初始化完成")
 
     # --- Commands ---
 
@@ -242,43 +242,47 @@ class DiscordQQBridge(Star):
     @filter.permission_type(PermissionType.ADMIN)
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def enable(self, event: AstrMessageEvent, guild_id: str = None, channel_id: str = None):
-        """Enable bridging for current group"""
+        """为当前群组启用桥接"""
         group_id = event.get_group_id()
         if not group_id:
-            return event.plain_result("❌ Only available in QQ groups").stop_event()
+            return event.plain_result("❌ 此命令只能在 QQ 群中使用").stop_event()
             
         # Auto-detect adapter
-        adapter_name = event.get_platform_name()
+        # Prefer unified_msg_origin prefix (e.g. "saki:GroupMessage:...") over platform name
+        if event.unified_msg_origin and ":" in event.unified_msg_origin:
+            adapter_name = event.unified_msg_origin.split(":")[0]
+        else:
+            adapter_name = event.get_platform_name()
         
         self.router.add_rule(group_id, adapter_name, guild_id, channel_id)
         
-        return event.plain_result(f"✅ Bridge enabled for group {group_id}\n🤖 Adapter: {adapter_name}").stop_event()
+        return event.plain_result(f"✅ 已为群 {group_id} 启用桥接\n🤖 适配器: {adapter_name}").stop_event()
 
     @bridge_group.command("disable")
     @filter.permission_type(PermissionType.ADMIN)
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def disable(self, event: AstrMessageEvent):
-        """Disable bridging for current group"""
+        """禁用当前群组的桥接"""
         group_id = event.get_group_id()
         if self.router.remove_rule(group_id):
-            return event.plain_result("✅ Bridge disabled").stop_event()
-        return event.plain_result("❌ Bridge not enabled for this group").stop_event()
+            return event.plain_result("✅ 桥接已禁用").stop_event()
+        return event.plain_result("❌ 当前群组未启用桥接").stop_event()
 
     @bridge_group.command("status")
     async def status(self, event: AstrMessageEvent):
-        """Show bridge status"""
+        """显示桥接状态"""
         lines = self.router.get_status()
         if not lines:
-            return event.plain_result("📊 No active bridges").stop_event()
-        return event.plain_result("📊 Bridge Status:\n" + "\n".join(lines)).stop_event()
+            return event.plain_result("📊 暂无活跃的桥接").stop_event()
+        return event.plain_result("📊 桥接状态:\n" + "\n".join(lines)).stop_event()
 
     @bridge_group.command("debug_id")
     async def debug_id(self, event: AstrMessageEvent):
-        """Show session info"""
+        """显示会话信息"""
         return event.plain_result(
-            f"🆔 Session: {event.session_id}\n"
+            f"🆔 会话ID: {event.session_id}\n"
             f"📍 UMO: {event.unified_msg_origin}\n"
-            f"🤖 Platform: {event.get_platform_name()}"
+            f"🤖 平台: {event.get_platform_name()}"
         ).stop_event()
 
     # --- Event Handler ---
