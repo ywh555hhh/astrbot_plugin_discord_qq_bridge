@@ -5,6 +5,12 @@
         "hint": "Discord消息转发到QQ群时使用的消息模板。可用变量：\n- {guild_name}: Discord服务器名称\n- {channel_name}: Discord频道名称\n- {author_name}: 发言人昵称\n- {timestamp}: 消息时间戳\n- {content}: 消息内容",
         "default": "🔗 Discord 消息转发\n\n服务器: {guild_name}\n频道: #{channel_name}\n发言人: {author_name}\n时间: {timestamp}\n\n内容:\n{content}"
     },
+    "default_qq_adapter_name": {
+        "description": "默认QQ适配器名称",
+        "type": "string",
+        "hint": "当无法自动识别适配器时使用的默认名称（例如 saki 或 aiocqhttp）",
+        "default": "saki"
+    },
     "max_message_length": {
         "description": "最大消息长度",
         "type": "int",
